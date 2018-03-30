@@ -18,14 +18,24 @@ tf_cc_test(
     ],
 )
 
-filegroup(
-    name = "all_files",
-    srcs = glob(
-        ["**/*"],
-        exclude = [
-            "**/METADATA",
-            "**/OWNERS",
-        ],
-    ),
-    visibility = ["//tensorflow:__subpackages__"],
+tf_cc_test(
+    name = "swap_elementwise_binary_test",
+    srcs = ["swap_elementwise_binary_test.cc"],
+    deps = [
+        "//tensorflow/contrib/lite/toco:graph_transformations",
+        "//tensorflow/contrib/lite/toco:model",
+        "//tensorflow/contrib/lite/toco:tooling_util",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+tf_cc_test(
+    name = "lstm_utils_test",
+    srcs = ["lstm_utils_test.cc"],
+    deps = [
+        "//tensorflow/contrib/lite/toco:graph_transformations",
+        "//tensorflow/contrib/lite/toco:model",
+        "//tensorflow/contrib/lite/toco:tooling_util",
+        "@com_google_googletest//:gtest_main",
+    ],
 )

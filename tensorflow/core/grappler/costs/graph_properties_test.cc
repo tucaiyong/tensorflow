@@ -113,6 +113,33 @@ TEST_F(GraphPropertiesTest, StaticProperties) {
   }
 }
 
+TEST_F(GraphPropertiesTest, ClearProperties) {
+  TrivialTestGraphInputYielder fake_input(4, 1, 10, false,
+                                          cluster_->GetDeviceNames());
+  GrapplerItem item;
+  CHECK(fake_input.NextItem(&item));
+
+  GraphProperties properties(item);
+  Status s = properties.InferStatically(true);
+  TF_CHECK_OK(s);
+
+  for (const auto& node : item.graph.node()) {
+    if (node.op() == "RandomStandardNormal") {
+      EXPECT_EQ(1, properties.GetInputProperties(node.name()).size());
+      const auto props = properties.GetOutputProperties(node.name());
+      properties.ClearOutputProperties(node.name());
+      const auto cleared_props = properties.GetOutputProperties(node.name());
+      EXPECT_TRUE(cleared_props.empty());
+    } else if (node.op() == "AddN") {
+      const auto in_props = properties.GetInputProperties(node.name());
+      EXPECT_EQ(1, in_props.size());
+      properties.ClearInputProperties(node.name());
+      const auto cleared_props = properties.GetInputProperties(node.name());
+      EXPECT_TRUE(cleared_props.empty());
+    }
+  }
+}
+
 TEST_F(GraphPropertiesTest, DynamicProperties) {
   TrivialTestGraphInputYielder fake_input(4, 1, 10, false,
                                           cluster_->GetDeviceNames());
@@ -919,6 +946,17 @@ TEST_F(GraphPropertiesTest, FedNodes) {
       }
     }
   }
+}
+
+TEST_F(GraphPropertiesTest, Performance) {
+  // Load a large graph with many nested loops to make sure we can infer shapes
+  // quickly.
+  GrapplerItem item;
+  string filename = io::JoinPath(testing::TensorFlowSrcRoot(), kTestDataPath,
+                                 "large_graph.pbtxt.html");
+  TF_CHECK_OK(ReadGraphDefFromFile(filename, &item.graph));
+  GraphProperties properties(item);
+  TF_CHECK_OK(properties.InferStatically(false));
 }
 
 }  // namespace

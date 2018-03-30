@@ -41,14 +41,18 @@ class GpuExecutable;
 class Thunk {
  public:
   enum class Kind {
+    kConditional,
     kConvolution,
     kCopy,
     kCudnnBatchNormBackward,
     kCudnnBatchNormForwardInference,
     kCudnnBatchNormForwardTraining,
+    kFft,
     kGemm,
     kInfeed,
     kKernel,
+    kMemset32BitValue,
+    kMemzero,
     kSequential,
     kTuple,
     kWhile,

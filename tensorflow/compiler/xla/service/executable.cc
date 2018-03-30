@@ -21,6 +21,7 @@ limitations under the License.
 #include "tensorflow/compiler/xla/status_macros.h"
 #include "tensorflow/core/lib/hash/hash.h"
 #include "tensorflow/core/lib/io/path.h"
+#include "tensorflow/core/lib/strings/proto_serialization.h"
 #include "tensorflow/core/lib/strings/stringprintf.h"
 #include "tensorflow/core/platform/env.h"
 
@@ -73,7 +74,7 @@ StatusOr<std::unique_ptr<ShapedBuffer>> Executable::ExecuteOnStreamWrapper(
   std::unique_ptr<HloExecutionProfile> profile_ptr =
       module_config().debug_options().xla_hlo_profile() &&
               hlo_profiling_enabled()
-          ? MakeUnique<HloExecutionProfile>(&hlo_profile_printer(),
+          ? MakeUnique<HloExecutionProfile>(&hlo_profile_printer_data(),
                                             &hlo_profile_index_map())
           : nullptr;
 
@@ -87,6 +88,10 @@ StatusOr<std::unique_ptr<ShapedBuffer>> Executable::ExecuteOnStreamWrapper(
     VLOG(1) << "done with block-host-until-done";
 
     // Merge in run-time profile information from execution_profile.
+    //
+    // TODO(b/71713097): This is buggy -- even though the mutex takes care of
+    // C++ level races, some other concurrent ExecuteOnStreamWrapper call could
+    // have rewritten the execution_profile before we get to it.
     profile->MergeFrom(execution_profile());
 
     // Overall execution time (in nanoseconds) from the executor timer.

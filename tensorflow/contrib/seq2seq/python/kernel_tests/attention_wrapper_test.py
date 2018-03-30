@@ -69,7 +69,7 @@ class AttentionWrapperTest(test.TestCase):
   def assertAllCloseOrEqual(self, x, y, **kwargs):
     if isinstance(x, np.ndarray) or isinstance(x, float):
       return super(AttentionWrapperTest, self).assertAllClose(
-          x, y, atol=1e-4, **kwargs)
+          x, y, atol=1e-3, **kwargs)
     else:
       self.assertAllEqual(x, y, **kwargs)
 
@@ -79,6 +79,28 @@ class AttentionWrapperTest(test.TestCase):
     new_state = state.clone(time=1)
     self.assertEqual(state.time, None)
     self.assertEqual(new_state.time, 1)
+
+  def testAttentionWrapperStateShapePropgation(self):
+    batch_size = 5
+    max_time = 5
+    num_units = 5
+
+    memory = random_ops.random_uniform(
+        [batch_size, max_time, num_units], seed=1)
+    mechanism = wrapper.LuongAttention(num_units, memory)
+    cell = wrapper.AttentionWrapper(rnn_cell.LSTMCell(num_units), mechanism)
+
+    # Create zero state with static batch size.
+    static_state = cell.zero_state(batch_size, dtypes.float32)
+    # Create zero state without static batch size.
+    state = cell.zero_state(array_ops.shape(memory)[0], dtypes.float32)
+
+    state = static_state.clone(
+        cell_state=state.cell_state, attention=state.attention)
+
+    self.assertEqual(state.cell_state.c.shape, static_state.cell_state.c.shape)
+    self.assertEqual(state.cell_state.h.shape, static_state.cell_state.h.shape)
+    self.assertEqual(state.attention.shape, static_state.attention.shape)
 
   def _testWithAttention(self,
                          create_attention_mechanism,
@@ -200,6 +222,9 @@ class AttentionWrapperTest(test.TestCase):
           self.assertEqual(
               (None, batch_size, None),
               tuple(state_alignment_history.get_shape().as_list()))
+        nest.assert_same_structure(
+            cell.state_size,
+            cell.zero_state(batch_size, dtypes.float32))
         # Remove the history from final_state for purposes of the
         # remainder of the tests.
         final_state = final_state._replace(alignment_history=())  # pylint: disable=protected-access
@@ -276,7 +301,7 @@ class AttentionWrapperTest(test.TestCase):
         rnn_output=ResultSummary(
             shape=(5, 3, 6), dtype=dtype('float32'), mean=-0.00597103),
         sample_id=ResultSummary(
-            shape=(5, 3), dtype=dtype('int32'), mean=1.4))
+            shape=(5, 3), dtype=dtype('int32'), mean=1.6))
     expected_final_state = AttentionWrapperState(
         cell_state=LSTMStateTuple(
             c=ResultSummary(
@@ -305,7 +330,7 @@ class AttentionWrapperTest(test.TestCase):
         rnn_output=ResultSummary(
             shape=(5, 3, 6), dtype=dtype('float32'), mean=-0.0052615386),
         sample_id=ResultSummary(
-            shape=(5, 3), dtype=dtype('int32'), mean=1.4666666666666666))
+            shape=(5, 3), dtype=dtype('int32'), mean=1.3333333333))
     expected_final_state = AttentionWrapperState(
         cell_state=LSTMStateTuple(
             c=ResultSummary(
@@ -336,7 +361,7 @@ class AttentionWrapperTest(test.TestCase):
         rnn_output=ResultSummary(
             shape=(5, 3, 6), dtype=dtype('float32'), mean=-0.0052615386),
         sample_id=ResultSummary(
-            shape=(5, 3), dtype=dtype('int32'), mean=1.4666666666666666))
+            shape=(5, 3), dtype=dtype('int32'), mean=1.3333333333333333))
     expected_final_state = AttentionWrapperState(
         cell_state=LSTMStateTuple(
             c=ResultSummary(
@@ -578,7 +603,7 @@ class AttentionWrapperTest(test.TestCase):
         rnn_output=ResultSummary(
             shape=(5, 3, 6), dtype=dtype('float32'), mean=-0.0025896581),
         sample_id=ResultSummary(
-            shape=(5, 3), dtype=dtype('int32'), mean=1.8666666666666667))
+            shape=(5, 3), dtype=dtype('int32'), mean=1.6))
     expected_final_state = AttentionWrapperState(
         cell_state=LSTMStateTuple(
             c=ResultSummary(
@@ -594,7 +619,7 @@ class AttentionWrapperTest(test.TestCase):
             shape=(5, 8), dtype=dtype('float32'), mean=0.028698336),
         alignment_history=())
     expected_final_alignment_history = ResultSummary(
-        shape=(3, 5, 8), dtype=dtype('float32'), mean=0.046009291)
+        shape=(3, 5, 8), dtype=dtype('float32'), mean=0.04865776002407074)
 
     self._testWithAttention(
         create_attention_mechanism,
@@ -760,26 +785,31 @@ class AttentionWrapperTest(test.TestCase):
         wrapper.BahdanauAttention, wrapper.LuongAttention)
 
     expected_final_output = BasicDecoderOutput(
-        rnn_output=ResultSummary(
-            shape=(5, 3, 20), dtype=dtype('float32'), mean=0.11691988),
-        sample_id=ResultSummary(
-            shape=(5, 3), dtype=dtype('int32'), mean=7.2666666666666666))
+        rnn_output=ResultSummary(shape=(5, 3, 20),
+                                 dtype=dtype('float32'),
+                                 mean=0.11723966),
+        sample_id=ResultSummary(shape=(5, 3),
+                                dtype=dtype('int32'),
+                                mean=9.2666666666666675))
     expected_final_state = AttentionWrapperState(
         cell_state=LSTMStateTuple(
-            c=ResultSummary(
-                shape=(5, 9), dtype=dtype('float32'), mean=-0.0036486709),
-            h=ResultSummary(
-                shape=(5, 9), dtype=dtype('float32'), mean=-0.0018835809)),
-        attention=ResultSummary(
-            shape=(5, 20), dtype=dtype('float32'), mean=0.11680689),
+            c=ResultSummary(shape=(5, 9),
+                            dtype=dtype('float32'),
+                            mean=-0.003545674),
+            h=ResultSummary(shape=(5, 9),
+                            dtype=dtype('float32'),
+                            mean=-0.0018327223)),
+        attention=ResultSummary(shape=(5, 20),
+                                dtype=dtype('float32'),
+                                mean=0.11728073),
         time=3,
         alignments=(
             ResultSummary(shape=(5, 8), dtype=dtype('float32'), mean=0.125),
             ResultSummary(shape=(5, 8), dtype=dtype('float32'), mean=0.125)),
+        alignment_history=(),
         attention_state=(
             ResultSummary(shape=(5, 8), dtype=dtype('float32'), mean=0.125),
-            ResultSummary(shape=(5, 8), dtype=dtype('float32'), mean=0.125)),
-        alignment_history=())
+            ResultSummary(shape=(5, 8), dtype=dtype('float32'), mean=0.125)))
     expected_final_alignment_history = (
         ResultSummary(shape=(3, 5, 8), dtype=dtype('float32'), mean=0.125),
         ResultSummary(shape=(3, 5, 8), dtype=dtype('float32'), mean=0.125))
