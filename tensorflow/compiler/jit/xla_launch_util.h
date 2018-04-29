@@ -19,7 +19,7 @@ limitations under the License.
 #define TENSORFLOW_COMPILER_JIT_XLA_LAUNCH_UTIL_H_
 
 #include "tensorflow/compiler/jit/xla_compilation_cache.h"
-#include "tensorflow/compiler/jit/xla_tensor_info.h"
+#include "tensorflow/compiler/jit/xla_tensor.h"
 #include "tensorflow/compiler/tf2xla/xla_compiler.h"
 #include "tensorflow/compiler/xla/client/local_client.h"
 #include "tensorflow/core/framework/allocation_description.pb.h"
@@ -46,16 +46,11 @@ std::map<int, OptionalTensor> SnapshotResourceVariables(OpKernelContext* ctx,
 // see comment on `AllowsAsynchronousDeallocation()`.
 class XlaAllocator : public xla::DeviceMemoryAllocator {
  public:
-  XlaAllocator(const perftools::gputools::Platform* platform,
-               OpKernelContext* op_context);
+  XlaAllocator(const se::Platform* platform, Allocator* wrapped);
   ~XlaAllocator() override;
-  xla::StatusOr<perftools::gputools::DeviceMemoryBase> Allocate(
-      int device_ordinal, uint64 size, bool retry_on_failure) override;
-  Status Deallocate(int device_ordinal,
-                    perftools::gputools::DeviceMemoryBase* mem) override;
-
-  // Un-track 'ptr' - do not delete it on destruction.
-  void Release(void* ptr);
+  xla::StatusOr<se::DeviceMemoryBase> Allocate(int device_ordinal, uint64 size,
+                                               bool retry_on_failure) override;
+  Status Deallocate(int device_ordinal, se::DeviceMemoryBase* mem) override;
 
   // The Tensorflow BFC allocator used on GPU allows host-side deallocation
   // before GPU execution takes place. Tensorflow uses the ordering of the main
@@ -67,17 +62,19 @@ class XlaAllocator : public xla::DeviceMemoryAllocator {
   bool AllowsAsynchronousDeallocation() const override { return true; }
 
  private:
-  OpKernelContext* const op_context_;
-  std::unordered_set<void*> allocated_;
+  Allocator* wrapped_;
 };
 
 // Helper class to perform the marshalling of TensorFlow inputs and outputs to
 // ShapedBuffers suitable for passing to an XLA computation.
 class XlaComputationLaunchContext {
  public:
+  // Create a new launch context. 'allocate_xla_tensors' is true if allocated
+  // output tensors and variables are always XlaTensors. If false they are
+  // assumed to be "normal" device pointers.
   XlaComputationLaunchContext(int64 num_resource_args, xla::LocalClient* client,
-                              XlaAllocator* xla_allocator,
-                              XlaTensorInfoManager* tensor_info_manager);
+                              xla::DeviceMemoryAllocator* xla_allocator,
+                              bool allocate_xla_tensors);
 
   // Add all inputs within `ctx` as XLA arguments (returned by arguments()).
   // `variables` is a map from TensorFlow argument number to resource variable.
@@ -88,7 +85,7 @@ class XlaComputationLaunchContext {
   // Given the XLA output in `output`, populate all outputs of `ctx`.
   void PopulateOutputs(OpKernelContext* ctx,
                        const XlaCompiler::CompilationResult* kernel,
-                       std::unique_ptr<xla::ScopedShapedBuffer> output);
+                       xla::ScopedShapedBuffer output);
 
   // Return the argument list. Only valid after PopulateInputs() has been
   // called.
@@ -97,8 +94,8 @@ class XlaComputationLaunchContext {
  private:
   int64 num_resource_args_;
   xla::LocalClient* client_;
-  XlaAllocator* xla_allocator_;
-  XlaTensorInfoManager* tensor_info_manager_;
+  xla::DeviceMemoryAllocator* xla_allocator_;
+  bool allocate_xla_tensors_;
   std::vector<std::unique_ptr<xla::ShapedBuffer>> arg_buffers_;
   std::vector<xla::ShapedBuffer*> arg_ptrs_;
 };
@@ -127,8 +124,7 @@ class XlaTensorBuffer : public TensorBuffer {
   }
 
   static Tensor MakeTensor(DataType dtype, const TensorShape& shape,
-                           perftools::gputools::DeviceMemoryBase buffer,
-                           Allocator* allocator) {
+                           se::DeviceMemoryBase buffer, Allocator* allocator) {
     size_t expected_size = shape.num_elements() * DataTypeSize(dtype);
     auto* tensor_buffer = new XlaTensorBuffer(buffer.opaque(), expected_size,
                                               buffer.size(), allocator);
